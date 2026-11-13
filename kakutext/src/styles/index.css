@@ -1,0 +1,103 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --bg-canvas: #fdf3e7;
+  --bg-paper: #fffdf9;
+  --bg-toolbar: #f8dfc2;
+  --bg-tab-active: #fff6d6;
+  --border-line: #d9b794;
+  --border-dashed: #d4b28c;
+  --text-primary: #4e2e18;
+  --text-muted: #78523a;
+  --accent-primary: #f4a84e;
+  --accent-primary-fg: #3b200e;
+  --accent-link: #b3541e;
+  --danger-bg: #f29a68;
+  --danger-fg: #3b200e;
+  --danger-text: #b43422;
+  --shadow-paper: 0 6px 20px -4px rgba(78, 46, 24, 0.08);
+  --shadow-soft: 0 2px 8px -2px rgba(78, 46, 24, 0.08);
+}
+
+.dark {
+  --bg-canvas: #1e1815;
+  --bg-paper: #28201c;
+  --bg-toolbar: #332822;
+  --bg-tab-active: #3f3128;
+  --border-line: #574438;
+  --border-dashed: #6b5446;
+  --text-primary: #fbf0e4;
+  --text-muted: #cbb39d;
+  --accent-primary: #f5b461;
+  --accent-primary-fg: #28180c;
+  --accent-link: #f7b977;
+  --danger-bg: #f29a68;
+  --danger-fg: #28180c;
+  --danger-text: #f7a494;
+  --shadow-paper: 0 8px 24px -4px rgba(0, 0, 0, 0.4);
+  --shadow-soft: 0 2px 10px -2px rgba(0, 0, 0, 0.35);
+}
+
+@theme inline {
+  --color-canvas: var(--bg-canvas);
+  --color-paper: var(--bg-paper);
+  --color-toolbar: var(--bg-toolbar);
+  --color-tab-active: var(--bg-tab-active);
+  --color-line: var(--border-line);
+  --color-dashed: var(--border-dashed);
+  --color-ink: var(--text-primary);
+  --color-muted: var(--text-muted);
+  --color-accent: var(--accent-primary);
+  --color-accent-fg: var(--accent-primary-fg);
+  --color-link: var(--accent-link);
+  --color-danger: var(--danger-bg);
+  --color-danger-fg: var(--danger-fg);
+  --color-danger-text: var(--danger-text);
+
+  --font-sans: "Nunito Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  --radius-paper: 1.25rem;
+  --radius-card: 0.75rem;
+  --radius-pill: 9999px;
+
+  --shadow-paper: var(--shadow-paper);
+  --shadow-soft: var(--shadow-soft);
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    font-size: 16px;
+    background-color: var(--bg-canvas);
+    color: var(--text-primary);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    min-height: 100dvh;
+    margin: 0;
+    background-color: var(--bg-canvas);
+    color: var(--text-primary);
+    line-height: 1.6;
+    transition: background-color 150ms ease, color 150ms ease;
+  }
+
+  input,
+  textarea,
+  select {
+    font-size: 1rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
