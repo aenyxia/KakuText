@@ -48,7 +48,6 @@ export function SettingsPage() {
         <TextField
           label="Display name"
           defaultValue={session?.user.email?.split('@')[0] ?? 'Cozy Writer'}
-          hint="Synced to public.profiles in MOD-011."
         />
 
         <div className="flex items-center justify-between rounded-card border-[1.5px] border-ink bg-toolbar/60 p-3.5">
