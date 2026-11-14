@@ -1,261 +1,268 @@
-import { useRef } from 'react';
-import { Folder as FolderIcon, FolderPlus, Pin, Search, Star, X } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
+import { FilePlus2, X } from 'lucide-react';
+import { FolderList } from '@/components/folders/FolderList';
+import { NoteCard } from '@/components/notes/NoteCard';
+import { SearchBar } from '@/components/search/SearchBar';
+import { SearchResultsList } from '@/components/search/SearchResultsList';
+import { Button } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { IconButton } from '@/components/ui/IconButton';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { TextField } from '@/components/ui/TextField';
+import { useToast } from '@/components/ui/Toast';
 import { useFocusTrap } from '@/hooks/useFocusTrap';
+import { useFolders } from '@/hooks/useFolders';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
-import { cn } from '@/lib/cn';
-import type { Folder, NoteSummary } from '@/stores/useAppStore';
+import {
+  useNotesList,
+  useSoftDeleteNote,
+  useToggleFavoriteNote,
+  useTogglePinNote,
+} from '@/hooks/useNotes';
+import { useSearchNotes } from '@/hooks/useSearchNotes';
+import { useAppStore, type NoteSummary } from '@/stores/useAppStore';
 
 export interface SidebarDrawerProps {
-  isOpen: boolean;
-  notes: NoteSummary[];
-  folders: Folder[];
-  activeNoteId: string | null;
-  activeFolderId: string | null;
-  onlyFavorites: boolean;
-  searchQuery: string;
-  isLoading: boolean;
-  onClose: () => void;
-  onSearchChange: (query: string) => void;
-  onSelectFilter: (filter: { folderId: string | null; onlyFavorites: boolean }) => void;
+  activeNoteId?: string;
+  isCreatingNote?: boolean;
+  onCreateNote: () => void;
   onSelectNote: (noteId: string) => void;
-  onTogglePin: (noteId: string, nextPinned: boolean) => void;
-  onToggleFavorite: (noteId: string, nextFavorited: boolean) => void;
-  onOpenCreateFolder: () => void;
+  onNoteDeleted?: (deletedNoteId: string) => void;
 }
 
 export function SidebarDrawer({
-  isOpen,
-  notes,
-  folders,
   activeNoteId,
-  activeFolderId,
-  onlyFavorites,
-  searchQuery,
-  isLoading,
-  onClose,
-  onSearchChange,
-  onSelectFilter,
+  isCreatingNote = false,
+  onCreateNote,
   onSelectNote,
-  onTogglePin,
-  onToggleFavorite,
-  onOpenCreateFolder,
+  onNoteDeleted,
 }: SidebarDrawerProps) {
   const isDesktop = useMediaQuery('(min-width: 768px)');
-  const drawerRef = useRef<HTMLDivElement>(null);
+  const isDrawerOpen = useAppStore((s) => s.isDrawerOpen);
+  const setDrawerOpen = useAppStore((s) => s.setDrawerOpen);
+  const activeFolderId = useAppStore((s) => s.activeFolderId);
+  const onlyFavorites = useAppStore((s) => s.onlyFavorites);
 
-  useFocusTrap(drawerRef, !isDesktop && isOpen, onClose);
+  const drawerRef = useRef<HTMLDivElement | null>(null);
+  const [noteToDelete, setNoteToDelete] = useState<NoteSummary | null>(null);
+  const { showToast } = useToast();
 
-  const sidebarContent = (
-    <div className="flex h-full flex-col gap-4 overflow-y-auto p-3.5">
-      <div className="flex items-center justify-between md:hidden">
-        <span className="text-base font-black text-ink">Notes &amp; Folders</span>
-        <IconButton aria-label="Close sidebar" variant="toolbar" onClick={onClose}>
-          <X className="h-5 w-5" aria-hidden="true" />
-        </IconButton>
-      </div>
+  useFocusTrap(drawerRef, !isDesktop && isDrawerOpen, () => setDrawerOpen(false));
 
-      {/* Search Bar */}
-      <div className="relative">
-        <TextField
-          label="Search notes"
-          hideLabel
-          value={searchQuery}
-          onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="Search notes..."
-          className="pr-10"
+  const { data: folders = [] } = useFolders();
+  const { data: notes = [], isLoading: isNotesLoading } = useNotesList({
+    folderId: activeFolderId,
+    onlyFavorites,
+  });
+
+  const {
+    data: searchResults = [],
+    isLoading: isSearchLoading,
+    isError: isSearchError,
+    debouncedQuery,
+    isSearchActive,
+    validationError: searchValidationError,
+  } = useSearchNotes();
+
+  const togglePin = useTogglePinNote();
+  const toggleFavorite = useToggleFavoriteNote();
+  const softDeleteNote = useSoftDeleteNote();
+
+  const foldersById = useMemo(
+    () => new Map(folders.map((folder) => [folder.id, folder])),
+    [folders]
+  );
+
+  const activeFolderName = activeFolderId ? foldersById.get(activeFolderId)?.name : undefined;
+
+  const activeHeading = useMemo(() => {
+    if (isSearchActive) {
+      return `Search Results (${searchResults.length})`;
+    }
+    if (onlyFavorites) return `Favorite Notes (${notes.length})`;
+    if (activeFolderId) {
+      return `${activeFolderName ?? 'Folder Notes'} (${notes.length})`;
+    }
+    return `All Notes (${notes.length})`;
+  }, [
+    isSearchActive,
+    searchResults.length,
+    onlyFavorites,
+    activeFolderId,
+    activeFolderName,
+    notes.length,
+  ]);
+
+  const handleConfirmDeleteNote = async () => {
+    if (!noteToDelete) return;
+    const deletedId = noteToDelete.id;
+    try {
+      await softDeleteNote.mutateAsync(deletedId);
+      setNoteToDelete(null);
+      showToast('Note moved to trash.', 'info');
+      onNoteDeleted?.(deletedId);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not delete note.', 'error');
+    }
+  };
+
+  const sidebarBody = (
+    <div className="flex h-full min-h-0 flex-col gap-3.5 p-3.5">
+        <div className="relative flex shrink-0 flex-col items-center justify-center gap-1 border-b border-line/70 pb-3">
+        <img
+          src="/logo.svg"
+          alt="KakuText"
+          className="h-14 w-50 shrink-0 object-contain"
         />
-        <Search
-          className="pointer-events-none absolute top-1/2 right-3.5 h-4 w-4 -translate-y-1/2 text-muted"
-          aria-hidden="true"
-        />
-      </div>
 
-      {/* Quick Filters */}
-      <nav aria-label="Note filters" className="space-y-1">
-        <button
-          type="button"
-          onClick={() => {
-            onSelectFilter({ folderId: null, onlyFavorites: false });
-            if (!isDesktop) onClose();
-          }}
-          className={cn(
-            'flex min-h-11 w-full cursor-pointer items-center justify-between rounded-card border-[1.5px] px-3 py-2 text-left text-sm font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink',
-            activeFolderId === null && !onlyFavorites
-              ? 'border-ink bg-tab-active text-ink shadow-soft'
-              : 'border-transparent text-ink hover:bg-paper/60'
-          )}
-        >
-          <span>All Notes</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            onSelectFilter({ folderId: null, onlyFavorites: true });
-            if (!isDesktop) onClose();
-          }}
-          className={cn(
-            'flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-card border-[1.5px] px-3 py-2 text-left text-sm font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink',
-            onlyFavorites
-              ? 'border-ink bg-tab-active text-ink shadow-soft'
-              : 'border-transparent text-ink hover:bg-paper/60'
-          )}
-        >
-          <Star className="h-4 w-4 text-accent-link" aria-hidden="true" />
-          <span>Favorites</span>
-        </button>
-      </nav>
-
-      {/* Folders Section */}
-      <section aria-label="Folders" className="space-y-1.5">
-        <div className="flex items-center justify-between px-1">
-          <span className="text-xs font-extrabold tracking-wide text-muted uppercase">
-            Folders
-          </span>
+        {!isDesktop && (
           <IconButton
-            aria-label="Create new folder"
-            variant="toolbar"
-            onClick={onOpenCreateFolder}
+            type="button"
+            variant="default"
+            size="sm"
+            aria-label="Close navigation drawer"
+            onClick={() => setDrawerOpen(false)}
+            className="absolute top-0 right-0"
           >
-            <FolderPlus className="h-4 w-4" aria-hidden="true" />
+            <X className="h-4 w-4" aria-hidden="true" />
           </IconButton>
+        )}
+      </div>
+      <div className="flex shrink-0 items-center justify-between gap-2">
+        
+        <Button
+          type="button"
+          variant="primary"
+          size="md"
+          isLoading={isCreatingNote}
+          onClick={() => {
+            if (!isDesktop) setDrawerOpen(false);
+            onCreateNote();
+          }}
+          className="flex-1"
+        >
+          <FilePlus2 className="h-4 w-4" aria-hidden="true" />
+          <span>New Cozy Note</span>
+        </Button>
+
+        {!isDesktop && (
+          <IconButton
+            type="button"
+            variant="default"
+            size="sm"
+            aria-label="Close navigation drawer"
+            onClick={() => setDrawerOpen(false)}
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </IconButton>
+        )}
+      </div>
+
+      <div className="shrink-0">
+        <SearchBar scopeLabel={activeFolderName} />
+      </div>
+
+      <div className="shrink-0">
+        <FolderList
+          folders={folders}
+          onFilterSelected={() => {
+            if (!isDesktop) setDrawerOpen(false);
+          }}
+        />
+      </div>
+
+      <div className="flex min-h-0 flex-1 flex-col border-t border-line/70 pt-3">
+        <div className="mb-2 flex shrink-0 items-center justify-between px-1">
+          <h2 className="text-xs font-black tracking-wide text-muted uppercase">
+            {activeHeading}
+          </h2>
         </div>
 
-        {folders.length === 0 ? (
-          <p className="px-2 text-xs text-muted">No folders yet.</p>
-        ) : (
-          <ul className="space-y-1">
-            {folders.map((folder) => {
-              const selected = activeFolderId === folder.id && !onlyFavorites;
-              return (
-                <li key={folder.id}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onSelectFilter({ folderId: folder.id, onlyFavorites: false });
-                      if (!isDesktop) onClose();
-                    }}
-                    className={cn(
-                      'flex min-h-11 w-full cursor-pointer items-center gap-2 rounded-card border-[1.5px] px-3 py-2 text-left text-sm font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink',
-                      selected
-                        ? 'border-ink bg-tab-active text-ink shadow-soft'
-                        : 'border-transparent text-ink hover:bg-paper/60'
-                    )}
-                  >
-                    <FolderIcon
-                      className="h-4 w-4 shrink-0"
-                      style={{ color: folder.color ?? 'var(--accent-link)' }}
-                      aria-hidden="true"
-                    />
-                    <span className="truncate">{folder.name}</span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-0.5">
+          {isSearchActive ? (
+            <SearchResultsList
+              results={searchResults}
+              isLoading={isSearchLoading}
+              isError={isSearchError}
+              validationError={searchValidationError}
+              query={debouncedQuery || useAppStore.getState().searchQuery.trim()}
+              activeNoteId={activeNoteId}
+              onSelectNote={(id) => {
+                if (!isDesktop) setDrawerOpen(false);
+                onSelectNote(id);
+              }}
+            />
+          ) : isNotesLoading ? (
+            <>
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-20 w-full" />
+            </>
+          ) : notes.length === 0 ? (
+            <p className="rounded-card border border-dashed border-(--border-dashed) bg-paper/60 px-3 py-4 text-center text-xs font-bold text-muted">
+              No notes in this view yet.
+            </p>
+          ) : (
+            notes.map((note) => (
+              <NoteCard
+                key={note.id}
+                note={note}
+                folder={note.folder_id ? foldersById.get(note.folder_id) : undefined}
+                isActive={note.id === activeNoteId}
+                onSelect={(id) => {
+                  if (!isDesktop) setDrawerOpen(false);
+                  onSelectNote(id);
+                }}
+                onTogglePin={(id, pinned) => togglePin.mutate({ id, pinned })}
+                onToggleFavorite={(id, favorited) => toggleFavorite.mutate({ id, favorited })}
+                onRequestDelete={(target) => setNoteToDelete(target)}
+              />
+            ))
+          )}
+        </div>
+      </div>
 
-      {/* Notes List */}
-      <section aria-label="Notes list" className="flex-1 space-y-2">
-        <span className="block px-1 text-xs font-extrabold tracking-wide text-muted uppercase">
-          Notes ({notes.length})
-        </span>
-
-        {isLoading ? (
-          <div className="space-y-2">
-            <Skeleton className="h-14 w-full" />
-            <Skeleton className="h-14 w-full" />
-            <Skeleton className="h-14 w-full" />
-          </div>
-        ) : notes.length === 0 ? (
-          <div className="rounded-card border border-dashed border-(--border-dashed) bg-paper/70 p-3 text-xs text-muted">
-            No notes in this view yet.
-          </div>
-        ) : (
-          <ul className="space-y-2">
-            {notes.map((note) => {
-              const isCurrent = note.id === activeNoteId;
-              return (
-                <li
-                  key={note.id}
-                  className={cn(
-                    'flex items-center justify-between gap-1 rounded-card border-[1.5px] border-ink p-1.5 shadow-soft transition-colors',
-                    isCurrent ? 'bg-tab-active' : 'bg-paper hover:bg-tab-active/60'
-                  )}
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onSelectNote(note.id);
-                      if (!isDesktop) onClose();
-                    }}
-                    className="min-h-11 flex-1 cursor-pointer truncate px-2 text-left text-sm font-bold text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
-                  >
-                    {note.title.trim() || 'Untitled Note'}
-                  </button>
-
-                  <IconButton
-                    aria-label={note.pinned ? 'Unpin note' : 'Pin note'}
-                    variant="toolbar"
-                    isActive={note.pinned}
-                    onClick={() => onTogglePin(note.id, !note.pinned)}
-                  >
-                    <Pin className="h-4 w-4" aria-hidden="true" />
-                  </IconButton>
-
-                  <IconButton
-                    aria-label={note.favorited ? 'Remove from favorites' : 'Add to favorites'}
-                    variant="toolbar"
-                    isActive={note.favorited}
-                    onClick={() => onToggleFavorite(note.id, !note.favorited)}
-                  >
-                    <Star className="h-4 w-4" aria-hidden="true" />
-                  </IconButton>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
+      <ConfirmDialog
+        isOpen={Boolean(noteToDelete)}
+        title={`Delete "${noteToDelete?.title.trim() || 'Untitled Cozy Note'}"?`}
+        description="This note will be removed from your active workspace."
+        confirmLabel="Delete Note"
+        isLoading={softDeleteNote.isPending}
+        onConfirm={handleConfirmDeleteNote}
+        onClose={() => setNoteToDelete(null)}
+      />
     </div>
   );
 
-  // Desktop persistent sidebar
   if (isDesktop) {
     return (
       <aside
         aria-label="Workspace sidebar"
-        className="w-72 shrink-0 rounded-paper border-[1.5px] border-ink bg-toolbar/85 shadow-paper"
+        className="flex h-full min-h-0 w-72 shrink-0 flex-col overflow-hidden rounded-paper border-[1.5px] border-ink bg-toolbar/80 shadow-paper lg:w-80"
       >
-        {sidebarContent}
+        {sidebarBody}
       </aside>
     );
   }
 
-  // Mobile slide-over drawer
-  if (!isOpen) return null;
+  if (!isDrawerOpen) {
+    return null;
+  }
 
   return (
-    <div
-      className="fixed inset-0 z-40 flex bg-ink/40 backdrop-blur-[1px] md:hidden"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) {
-          onClose();
-        }
-      }}
-    >
+    <div className="fixed inset-0 z-40 flex md:hidden">
+      <div
+        aria-hidden="true"
+        onClick={() => setDrawerOpen(false)}
+        className="fixed inset-0 bg-ink/40 backdrop-blur-[1px]"
+      />
       <div
         ref={drawerRef}
         role="dialog"
         aria-modal="true"
-        aria-label="Notes navigation drawer"
-        className="h-full w-80 max-w-[85vw] border-r-[1.5px] border-ink bg-toolbar shadow-paper"
+        aria-label="Notes and folders navigation"
+        className="relative z-10 flex h-full w-80 max-w-[88vw] flex-col border-r-[1.5px] border-ink bg-toolbar shadow-paper"
       >
-        {sidebarContent}
+        {sidebarBody}
       </div>
     </div>
   );

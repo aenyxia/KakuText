@@ -7,7 +7,7 @@ export interface ConfirmDialogProps {
   description: string;
   confirmLabel?: string;
   cancelLabel?: string;
-  variant?: 'primary' | 'danger';
+  variant?: 'danger' | 'primary';
   isLoading?: boolean;
   onConfirm: () => void;
   onClose: () => void;
@@ -26,11 +26,11 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   return (
     <Dialog isOpen={isOpen} title={title} description={description} onClose={onClose}>
-      <div className="flex flex-wrap justify-end gap-2 pt-2">
-        <Button variant="secondary" onClick={onClose} disabled={isLoading}>
+      <div className="mt-4 flex flex-col-reverse justify-end gap-2 sm:flex-row">
+        <Button type="button" variant="secondary" disabled={isLoading} onClick={onClose}>
           {cancelLabel}
         </Button>
-        <Button variant={variant} onClick={onConfirm} isLoading={isLoading}>
+        <Button type="button" variant={variant} isLoading={isLoading} onClick={onConfirm}>
           {confirmLabel}
         </Button>
       </div>

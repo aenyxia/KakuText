@@ -8,6 +8,8 @@ const FILES = [
   ['think.svg', 'ThinkingPose.tsx', 'ThinkingPose'],
   ['sleepy.svg', 'SleepyPose.tsx', 'SleepyPose'],
   ['cheer.svg', 'CheeringPose.tsx', 'CheeringPose'],
+  ['logo.svg', 'KakuLogo.tsx', 'KakuLogo'],
+
 ];
 
 function toCamelCase(value) {

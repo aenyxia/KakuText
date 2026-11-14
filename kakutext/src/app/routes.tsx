@@ -4,6 +4,7 @@ import { LoginPage } from '@/features/auth/LoginPage';
 import { RequireAuth } from '@/features/auth/RequireAuth';
 import { ResetPasswordPage } from '@/features/auth/ResetPasswordPage';
 import { SignupPage } from '@/features/auth/SignupPage';
+import { NoteEditorPage } from '@/features/workspace/NoteEditorPage';
 import { NotFoundPage } from '@/features/workspace/NotFoundPage';
 import { SettingsPage } from '@/features/workspace/SettingsPage';
 import { WorkspacePage } from '@/features/workspace/WorkspacePage';
@@ -25,7 +26,7 @@ export const router = createBrowserRouter([
     path: '/notes/:id',
     element: (
       <RequireAuth>
-        <WorkspacePage />
+        <NoteEditorPage />
       </RequireAuth>
     ),
   },

@@ -18,7 +18,7 @@ function AuthRouteCard({ title, subtitle, mood }: AuthShellProps) {
           to="/"
           className="inline-flex min-h-11 items-center justify-center rounded-pill border-[1.5px] border-ink bg-accent px-5 py-2.5 text-sm font-bold text-accent-fg shadow-soft transition-transform active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
         >
-          Return to Workspace
+          Preview Workspace Shell
         </Link>
       </div>
     </div>
@@ -29,7 +29,7 @@ export function LoginPage() {
   return (
     <AuthRouteCard
       title="Welcome Back to KakuText"
-      subtitle="Email/password & PKCE login form will be wired here in MOD-004."
+      subtitle="Email/password & PKCE login form will be wired here in Phase 2 (MOD-004)."
       mood="happy"
     />
   );
@@ -39,7 +39,7 @@ export function SignupPage() {
   return (
     <AuthRouteCard
       title="Create Your Cozy Account"
-      subtitle="Registration with email confirmation will be wired here in MOD-004."
+      subtitle="Registration with email confirmation will be wired here in Phase 2 (MOD-004)."
       mood="cheering"
     />
   );
