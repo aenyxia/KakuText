@@ -6,10 +6,21 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
-export interface TiptapDoc {
+export type TiptapNode = {
+  type?: string;
+  attrs?: Record<string, Json | undefined>;
+  content?: TiptapNode[];
+  marks?: {
+    type: string;
+    attrs?: Record<string, Json | undefined>;
+  }[];
+  text?: string;
+};
+
+export type TiptapDoc = {
   type: 'doc';
-  content?: Json[];
-}
+  content?: TiptapNode[];
+};
 
 export interface Database {
   public: {
