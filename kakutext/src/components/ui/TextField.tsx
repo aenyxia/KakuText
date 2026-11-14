@@ -35,8 +35,8 @@ export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(function T
         aria-invalid={error ? true : undefined}
         aria-describedby={describedBy}
         className={cn(
-          'min-h-11 w-full rounded-card border border-line bg-paper px-3.5 py-2.5 text-base text-ink placeholder:text-muted shadow-soft transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:cursor-not-allowed disabled:opacity-60',
-          error && 'border-danger-text',
+          'min-h-11 w-full rounded-card border-[1.5px] border-ink bg-paper px-3.5 py-2.5 text-base text-ink placeholder:text-muted shadow-soft transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:cursor-not-allowed disabled:opacity-60',
+          error && 'border-danger-text focus-visible:outline-danger-text',
           className
         )}
         {...props}
@@ -49,7 +49,12 @@ export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(function T
       )}
 
       {error && (
-        <p id={errorId} role="alert" aria-live="polite" className="text-xs font-bold text-danger-text">
+        <p
+          id={errorId}
+          role="alert"
+          aria-live="polite"
+          className="text-xs font-bold text-danger-text"
+        >
           {error}
         </p>
       )}

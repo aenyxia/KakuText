@@ -10,9 +10,9 @@ export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>
 }
 
 const VARIANT_CLASSES: Record<IconButtonVariant, string> = {
-  default: 'border-line bg-paper text-ink shadow-soft hover:bg-toolbar',
+  default: 'border-ink bg-paper text-ink shadow-soft hover:bg-toolbar',
   toolbar: 'border-transparent bg-transparent text-ink hover:bg-tab-active',
-  danger: 'border-line bg-danger text-danger-fg shadow-soft hover:brightness-95',
+  danger: 'border-ink bg-danger text-danger-fg shadow-soft hover:brightness-95',
 };
 
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
@@ -32,9 +32,9 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
       type={type}
       aria-pressed={props['aria-pressed'] ?? (isActive ? true : undefined)}
       className={cn(
-        'inline-flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center justify-center rounded-card border transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink',
+        'inline-flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center justify-center rounded-card border-[1.5px] transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink',
         VARIANT_CLASSES[variant],
-        isActive && 'border-line bg-tab-active font-bold shadow-soft',
+        isActive && 'border-ink bg-tab-active font-bold shadow-soft',
         className
       )}
       {...props}
