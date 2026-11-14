@@ -26,9 +26,9 @@ interface ToastContextValue {
 const ToastContext = createContext<ToastContextValue | null>(null);
 
 const VARIANT_CLASSES: Record<ToastVariant, string> = {
-  info: 'border-line bg-paper text-ink',
-  success: 'border-line bg-tab-active text-ink',
-  error: 'border-line bg-danger text-danger-fg',
+  info: 'border-ink bg-paper text-ink',
+  success: 'border-ink bg-tab-active text-ink',
+  error: 'border-ink bg-danger text-danger-fg',
 };
 
 export function ToastProvider({ children }: { children: ReactNode }) {
@@ -77,7 +77,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             key={toast.id}
             role="status"
             className={cn(
-              'pointer-events-auto flex w-full max-w-sm items-center justify-between gap-3 rounded-card border px-4 py-2 text-sm font-bold shadow-paper',
+              'pointer-events-auto flex w-full max-w-sm items-center justify-between gap-3 rounded-card border-[1.5px] px-4 py-2 text-sm font-bold shadow-paper',
               VARIANT_CLASSES[toast.variant]
             )}
           >
