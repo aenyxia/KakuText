@@ -84,6 +84,7 @@
     transition: background-color 150ms ease, color 150ms ease;
   }
 
+  /* 16px minimum input font size prevents iOS Safari auto-zoom */
   input,
   textarea,
   select {
