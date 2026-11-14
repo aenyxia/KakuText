@@ -20,12 +20,7 @@ const SIZE_CLASSES: Record<NonNullable<KakuMascotProps['size']>, string> = {
   lg: 'h-28 w-28',
 };
 
-export function KakuMascot({
-  mood,
-  size = 'md',
-  label,
-  className,
-}: KakuMascotProps) {
+export function KakuMascot({ mood, size = 'md', label, className }: KakuMascotProps) {
   const prefersReducedMotion = useReducedMotion();
 
   const renderPose = () => {
@@ -49,14 +44,18 @@ export function KakuMascot({
       role={label ? 'img' : undefined}
       aria-label={label}
       aria-hidden={label ? undefined : true}
-      initial={prefersReducedMotion ? false : { scale: 0.96, opacity: 0.92 }}
+      initial={prefersReducedMotion ? false : { scale: 0.96, opacity: 0.9 }}
       animate={
         prefersReducedMotion
           ? { scale: 1, opacity: 1 }
           : { scale: 1, opacity: 1, y: mood === 'cheering' ? [0, -4, 0] : 0 }
       }
       transition={{ duration: prefersReducedMotion ? 0 : 0.25, ease: 'easeOut' }}
-      className={cn('inline-flex shrink-0 items-center justify-center', SIZE_CLASSES[size], className)}
+      className={cn(
+        'inline-flex shrink-0 items-center justify-center',
+        SIZE_CLASSES[size],
+        className
+      )}
     >
       {renderPose()}
     </motion.div>
