@@ -1,7 +1,6 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { IconButton } from '@/components/ui/IconButton';
-import { cn } from '@/lib/cn';
 
 export interface DialogProps {
   isOpen: boolean;
@@ -9,31 +8,26 @@ export interface DialogProps {
   description?: string;
   onClose: () => void;
   children: ReactNode;
-  className?: string;
 }
 
 const FOCUSABLE_SELECTOR =
-  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-export function Dialog({
-  isOpen,
-  title,
-  description,
-  onClose,
-  children,
-  className,
-}: DialogProps) {
+export function Dialog({ isOpen, title, description, onClose, children }: DialogProps) {
   const titleId = useId();
   const descriptionId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
 
-    const previouslyFocused = document.activeElement as HTMLElement | null;
+    previousFocusRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+
     const panel = panelRef.current;
-    const firstFocusable = panel?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
-    firstFocusable?.focus();
+    const focusables = panel?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
+    focusables?.[0]?.focus();
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -43,10 +37,11 @@ export function Dialog({
       }
 
       if (event.key === 'Tab' && panel) {
-        const focusables = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
-        if (focusables.length === 0) return;
-        const first = focusables[0];
-        const last = focusables[focusables.length - 1];
+        const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
+        if (items.length === 0) return;
+
+        const first = items[0];
+        const last = items[items.length - 1];
 
         if (event.shiftKey && document.activeElement === first) {
           event.preventDefault();
@@ -61,7 +56,7 @@ export function Dialog({
     document.addEventListener('keydown', handleKeyDown);
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
-      previouslyFocused?.focus();
+      previousFocusRef.current?.focus();
     };
   }, [isOpen, onClose]);
 
@@ -82,10 +77,7 @@ export function Dialog({
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
-        className={cn(
-          'w-full max-w-md rounded-paper border border-line bg-paper p-5 text-ink shadow-paper md:p-6',
-          className
-        )}
+        className="w-full max-w-lg rounded-paper border-[1.5px] border-ink bg-paper p-5 text-ink shadow-paper sm:p-6"
       >
         <div className="flex items-start justify-between gap-3">
           <div className="space-y-1">
