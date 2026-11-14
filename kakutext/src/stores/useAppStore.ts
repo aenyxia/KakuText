@@ -1,7 +1,8 @@
-import { create } from 'zustand';
 import type { Session } from '@supabase/supabase-js';
+import { create } from 'zustand';
 import type { MascotMood } from '@/components/mascot/KakuMascot';
 
+export type { MascotMood };
 export type ThemeMode = 'light' | 'dark';
 export type AutosaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'error' | 'conflict';
 
@@ -14,6 +15,7 @@ export interface Folder {
 export interface NoteSummary {
   id: string;
   title: string;
+  content_text?: string;
   pinned: boolean;
   favorited: boolean;
   folder_id: string | null;
@@ -24,11 +26,11 @@ const THEME_STORAGE_KEY = 'kakutext-theme';
 
 function getInitialTheme(): ThemeMode {
   if (typeof window === 'undefined') return 'light';
-  const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
-  return saved === 'dark' ? 'dark' : 'light';
+  const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+  return stored === 'dark' ? 'dark' : 'light';
 }
 
-interface AppState {
+export interface AppState {
   session: Session | null;
   authReady: boolean;
   theme: ThemeMode;
@@ -38,20 +40,23 @@ interface AppState {
   searchQuery: string;
   openTabIds: string[];
   autosaveStatus: AutosaveStatus;
+  lastSavedAt: string | null;
   mascotMood: MascotMood;
 
   setSession: (session: Session | null) => void;
+  resetOnSignOut: () => void;
   setTheme: (theme: ThemeMode) => void;
   toggleTheme: () => void;
-  setDrawerOpen: (isOpen: boolean) => void;
+  setDrawerOpen: (open: boolean) => void;
   toggleDrawer: () => void;
   setFilter: (filter: { folderId: string | null; onlyFavorites: boolean }) => void;
+  setActiveFolderId: (folderId: string | null) => void;
+  setOnlyFavorites: (onlyFavorites: boolean) => void;
   setSearchQuery: (query: string) => void;
   openTab: (noteId: string) => void;
   closeTab: (noteId: string) => void;
-  setAutosaveStatus: (status: AutosaveStatus) => void;
+  setAutosaveStatus: (status: AutosaveStatus, savedAt?: string | null) => void;
   setMascotMood: (mood: MascotMood) => void;
-  resetOnSignOut: () => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -64,14 +69,28 @@ export const useAppStore = create<AppState>((set) => ({
   searchQuery: '',
   openTabIds: [],
   autosaveStatus: 'idle',
+  lastSavedAt: null,
   mascotMood: 'happy',
 
   setSession: (session) => set({ session, authReady: true }),
 
+  resetOnSignOut: () =>
+    set({
+      session: null,
+      authReady: true,
+      isDrawerOpen: false,
+      activeFolderId: null,
+      onlyFavorites: false,
+      searchQuery: '',
+      openTabIds: [],
+      autosaveStatus: 'idle',
+      lastSavedAt: null,
+      mascotMood: 'happy',
+    }),
+
   setTheme: (theme) => {
     if (typeof window !== 'undefined') {
       window.localStorage.setItem(THEME_STORAGE_KEY, theme);
-      document.documentElement.classList.toggle('dark', theme === 'dark');
     }
     set({ theme });
   },
@@ -81,7 +100,6 @@ export const useAppStore = create<AppState>((set) => ({
       const next: ThemeMode = state.theme === 'light' ? 'dark' : 'light';
       if (typeof window !== 'undefined') {
         window.localStorage.setItem(THEME_STORAGE_KEY, next);
-        document.documentElement.classList.toggle('dark', next === 'dark');
       }
       return { theme: next };
     }),
@@ -90,8 +108,13 @@ export const useAppStore = create<AppState>((set) => ({
   toggleDrawer: () => set((state) => ({ isDrawerOpen: !state.isDrawerOpen })),
 
   setFilter: ({ folderId, onlyFavorites }) =>
-    set({ activeFolderId: folderId, onlyFavorites }),
+    set({
+      activeFolderId: folderId,
+      onlyFavorites,
+    }),
 
+  setActiveFolderId: (activeFolderId) => set({ activeFolderId, onlyFavorites: false }),
+  setOnlyFavorites: (onlyFavorites) => set({ onlyFavorites, activeFolderId: null }),
   setSearchQuery: (searchQuery) => set({ searchQuery }),
 
   openTab: (noteId) =>
@@ -106,19 +129,11 @@ export const useAppStore = create<AppState>((set) => ({
       openTabIds: state.openTabIds.filter((id) => id !== noteId),
     })),
 
-  setAutosaveStatus: (autosaveStatus) => set({ autosaveStatus }),
-  setMascotMood: (mascotMood) => set({ mascotMood }),
+  setAutosaveStatus: (autosaveStatus, savedAt) =>
+    set((state) => ({
+      autosaveStatus,
+      lastSavedAt: savedAt !== undefined ? savedAt : state.lastSavedAt,
+    })),
 
-  resetOnSignOut: () =>
-    set({
-      session: null,
-      authReady: true,
-      isDrawerOpen: false,
-      activeFolderId: null,
-      onlyFavorites: false,
-      searchQuery: '',
-      openTabIds: [],
-      autosaveStatus: 'idle',
-      mascotMood: 'happy',
-    }),
+  setMascotMood: (mascotMood) => set({ mascotMood }),
 }));
