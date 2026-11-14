@@ -11,10 +11,10 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
-  primary: 'border-line bg-accent text-accent-fg shadow-soft hover:brightness-95',
-  secondary: 'border-line bg-toolbar text-ink shadow-soft hover:bg-tab-active',
+  primary: 'border-ink bg-accent text-accent-fg shadow-soft hover:brightness-95',
+  secondary: 'border-ink bg-toolbar text-ink shadow-soft hover:bg-tab-active',
   ghost: 'border-transparent bg-transparent text-ink hover:bg-toolbar',
-  danger: 'border-line bg-danger text-danger-fg shadow-soft hover:brightness-95',
+  danger: 'border-ink bg-danger text-danger-fg shadow-soft hover:brightness-95',
 };
 
 const SIZE_CLASSES: Record<ButtonSize, string> = {
@@ -43,7 +43,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       disabled={disabled || isLoading}
       aria-busy={isLoading || undefined}
       className={cn(
-        'inline-flex cursor-pointer items-center justify-center gap-2 rounded-pill border font-bold transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink',
+        'inline-flex cursor-pointer items-center justify-center gap-2 rounded-pill border-[1.5px] font-bold transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink',
         VARIANT_CLASSES[variant],
         SIZE_CLASSES[size],
         className
