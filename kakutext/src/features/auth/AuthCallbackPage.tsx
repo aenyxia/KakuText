@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { KakuMascot } from '@/components/mascot/KakuMascot';
 import { supabase } from '@/lib/supabase';
@@ -7,46 +7,48 @@ export function AuthCallbackPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const hasRunRef = useRef(false);
 
   useEffect(() => {
-    let isCancelled = false;
+    if (hasRunRef.current) return;
+    hasRunRef.current = true;
 
     async function completeAuthCallback() {
       const errorDescription = searchParams.get('error_description');
       if (errorDescription) {
-        if (!isCancelled) setErrorMessage(errorDescription);
+        setErrorMessage(errorDescription);
         return;
       }
 
+      // 1. Check if detectSessionInUrl already exchanged the PKCE code automatically
+      const { data: existing } = await supabase.auth.getSession();
+      if (existing.session) {
+        navigate('/', { replace: true });
+        return;
+      }
+
+      // 2. Otherwise exchange the ?code= parameter once
       const code = searchParams.get('code');
       if (code) {
         const { error } = await supabase.auth.exchangeCodeForSession(code);
         if (error) {
-          if (!isCancelled) {
-            setErrorMessage(error.message || 'Verification link expired or already used.');
+          // Re-check session in case a concurrent listener completed it
+          const { data: retry } = await supabase.auth.getSession();
+          if (retry.session) {
+            navigate('/', { replace: true });
+            return;
           }
+          setErrorMessage(error.message || 'Verification link expired or already used.');
           return;
         }
-        if (!isCancelled) {
-          navigate('/', { replace: true });
-        }
+        navigate('/', { replace: true });
         return;
       }
 
-      // Fallback if detectSessionInUrl already processed the session
-      const { data } = await supabase.auth.getSession();
-      if (data.session) {
-        if (!isCancelled) navigate('/', { replace: true });
-      } else if (!isCancelled) {
-        setErrorMessage('No verification code found. Please request a fresh link.');
-      }
+      setErrorMessage('No verification code found. Please sign in again.');
     }
 
     void completeAuthCallback();
-
-    return () => {
-      isCancelled = true;
-    };
   }, [searchParams, navigate]);
 
   return (
