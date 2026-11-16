@@ -53,7 +53,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test": "vitest run",
-    "test:unit": "vitest run src/tests/unit"
+    "test": "vitest run --config vitest.config.ts",
+    "test:unit": "vitest run --config vitest.config.ts src/tests/unit",
+    "test:rls": "vitest run --config vitest.config.ts --mode development src/tests/rls"
   }
 }
