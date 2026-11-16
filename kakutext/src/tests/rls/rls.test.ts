@@ -19,9 +19,10 @@ const hasRlsTestEnv = Boolean(
     userBPassword
 );
 
-function createIsolatedClient(): SupabaseClient<Database> {
+function createIsolatedClient(label: string): SupabaseClient<Database> {
   return createClient<Database>(supabaseUrl, supabaseAnonKey, {
     auth: {
+      storageKey: `kakutext-rls-${label}`,
       persistSession: false,
       autoRefreshToken: false,
       detectSessionInUrl: false,
@@ -30,9 +31,9 @@ function createIsolatedClient(): SupabaseClient<Database> {
 }
 
 describe.skipIf(!hasRlsTestEnv)('MOD-013.2: Multi-User PostgreSQL RLS Verification Suite', () => {
-  const anonClient = createIsolatedClient();
-  const userAClient = createIsolatedClient();
-  const userBClient = createIsolatedClient();
+  const anonClient = createIsolatedClient('anon');
+  const userAClient = createIsolatedClient('user-a');
+  const userBClient = createIsolatedClient('user-b');
 
   let userAId = '';
   let userBId = '';
@@ -61,6 +62,7 @@ describe.skipIf(!hasRlsTestEnv)('MOD-013.2: Multi-User PostgreSQL RLS Verificati
     }
     userBId = authB.data.user.id;
 
+    // Seed a folder and note owned by User B
     const { data: folderB, error: folderErr } = await userBClient
       .from('folders')
       .insert({ name: `Private Folder ${uniqueToken}`, color: '#F4A84E' })
@@ -87,6 +89,7 @@ describe.skipIf(!hasRlsTestEnv)('MOD-013.2: Multi-User PostgreSQL RLS Verificati
     }
     userBNoteId = noteB.id;
 
+    // Seed a note owned by User A containing the same search token
     const { data: noteA, error: noteAErr } = await userAClient
       .from('notes')
       .insert({
@@ -184,6 +187,7 @@ describe.skipIf(!hasRlsTestEnv)('MOD-013.2: Multi-User PostgreSQL RLS Verificati
 
     expect(deleteFolderRes.data ?? []).toEqual([]);
 
+    // Confirm User B data remains intact
     const verifyNoteB = await userBClient
       .from('notes')
       .select('title')
