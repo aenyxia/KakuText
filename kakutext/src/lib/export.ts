@@ -5,6 +5,8 @@ export interface DocumentMetrics {
   characterCount: number;
 }
 
+export type ExportExtension = 'md' | 'txt';
+
 export function computeDocumentMetrics(plainText: string): DocumentMetrics {
   const trimmed = plainText.trim();
   if (!trimmed) {
@@ -13,11 +15,11 @@ export function computeDocumentMetrics(plainText: string): DocumentMetrics {
 
   return {
     wordCount: trimmed.split(/\s+/).length,
-    characterCount: trimmed.length,
+    characterCount: plainText.length,
   };
 }
 
-export function slugifyNoteTitle(title: string): string {
+export function slugifyFilename(title: string): string {
   const normalized = title
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -29,6 +31,13 @@ export function slugifyNoteTitle(title: string): string {
     .replace(/-+$/g, '');
 
   return normalized || 'untitled-note';
+}
+
+export const slugifyNoteTitle = slugifyFilename;
+
+export function buildExportFilename(title: string, extension: ExportExtension): string {
+  const cleanExt = extension.replace(/^\.+/, '').toLowerCase();
+  return `${slugifyFilename(title)}.${cleanExt}`;
 }
 
 function serializeInlineNodes(nodes?: JSONContent[]): string {
@@ -145,6 +154,10 @@ export function serializeTiptapJsonToMarkdown(doc: JSONContent, title?: string):
   return body ? `${body}\n` : '';
 }
 
+export function serializeTiptapDocToMarkdown(doc: JSONContent, title?: string): string {
+  return serializeTiptapJsonToMarkdown(doc, title);
+}
+
 function triggerBrowserDownload(content: string, filename: string, mimeType: string): void {
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
@@ -181,7 +194,7 @@ export function exportNoteToMarkdown(editor: Editor, title: string): string {
       ? `${rawBody}\n`
       : '';
 
-  const filename = `${slugifyNoteTitle(title)}.md`;
+  const filename = buildExportFilename(title, 'md');
   triggerBrowserDownload(markdown, filename, 'text/markdown;charset=utf-8');
   return filename;
 }
@@ -197,7 +210,7 @@ export function exportNoteToPlainText(editor: Editor, title: string): string {
       ? `${body}\n`
       : '';
 
-  const filename = `${slugifyNoteTitle(title)}.txt`;
+  const filename = buildExportFilename(title, 'txt');
   triggerBrowserDownload(text, filename, 'text/plain;charset=utf-8');
   return filename;
 }
