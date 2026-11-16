@@ -62,7 +62,18 @@ create policy "notes_insert_own"
   on public.notes
   for insert
   to authenticated
-  with check (auth.uid() = owner_id);
+  with check (
+    auth.uid() = owner_id
+    and (
+      folder_id is null
+      or exists (
+        select 1
+        from public.folders f
+        where f.id = folder_id
+          and f.owner_id = auth.uid()
+      )
+    )
+  );
 
 drop policy if exists "notes_update_own" on public.notes;
 create policy "notes_update_own"
@@ -70,7 +81,18 @@ create policy "notes_update_own"
   for update
   to authenticated
   using (auth.uid() = owner_id)
-  with check (auth.uid() = owner_id);
+  with check (
+    auth.uid() = owner_id
+    and (
+      folder_id is null
+      or exists (
+        select 1
+        from public.folders f
+        where f.id = folder_id
+          and f.owner_id = auth.uid()
+      )
+    )
+  );
 
 drop policy if exists "notes_delete_own" on public.notes;
 create policy "notes_delete_own"
