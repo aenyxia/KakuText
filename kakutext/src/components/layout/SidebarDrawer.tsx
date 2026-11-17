@@ -41,6 +41,7 @@ export function SidebarDrawer({
   const setDrawerOpen = useAppStore((s) => s.setDrawerOpen);
   const activeFolderId = useAppStore((s) => s.activeFolderId);
   const onlyFavorites = useAppStore((s) => s.onlyFavorites);
+  const closeTab = useAppStore((s) => s.closeTab);
 
   const drawerRef = useRef<HTMLDivElement | null>(null);
   const [noteToDelete, setNoteToDelete] = useState<NoteSummary | null>(null);
@@ -58,9 +59,9 @@ export function SidebarDrawer({
     data: searchResults = [],
     isLoading: isSearchLoading,
     isError: isSearchError,
+    validationError: searchValidationError,
     debouncedQuery,
     isSearchActive,
-    validationError: searchValidationError,
   } = useSearchNotes();
 
   const togglePin = useTogglePinNote();
@@ -97,6 +98,7 @@ export function SidebarDrawer({
     const deletedId = noteToDelete.id;
     try {
       await softDeleteNote.mutateAsync(deletedId);
+      closeTab(deletedId);
       setNoteToDelete(null);
       showToast('Note moved to trash.', 'info');
       onNoteDeleted?.(deletedId);
@@ -106,8 +108,9 @@ export function SidebarDrawer({
   };
 
   const sidebarBody = (
-    <div className="flex h-full min-h-0 flex-col gap-3.5 p-3.5">
-        <div className="relative flex shrink-0 flex-col items-center justify-center gap-1 border-b border-line/70 pb-3">
+    <div className="flex h-full min-h-0 flex-col gap-3 overflow-hidden p-3.5">
+      {/* Fixed Brand Header */}
+      <div className="relative flex shrink-0 flex-col items-center justify-center gap-1 border-b border-line/70 pb-3">
         <img
           src="/logo.svg"
           alt="KakuText"
@@ -127,8 +130,9 @@ export function SidebarDrawer({
           </IconButton>
         )}
       </div>
+
+      {/* Fixed New Note Button */}
       <div className="flex shrink-0 items-center justify-between gap-2">
-        
         <Button
           type="button"
           variant="primary"
@@ -143,25 +147,15 @@ export function SidebarDrawer({
           <FilePlus2 className="h-4 w-4" aria-hidden="true" />
           <span>New Cozy Note</span>
         </Button>
-
-        {!isDesktop && (
-          <IconButton
-            type="button"
-            variant="default"
-            size="sm"
-            aria-label="Close navigation drawer"
-            onClick={() => setDrawerOpen(false)}
-          >
-            <X className="h-4 w-4" aria-hidden="true" />
-          </IconButton>
-        )}
       </div>
 
+      {/* Fixed Search Bar */}
       <div className="shrink-0">
         <SearchBar scopeLabel={activeFolderName} />
       </div>
 
-      <div className="shrink-0">
+      {/* Fixed Folders Container (Larger fixed height + scrollable folder list) */}
+      <div className="flex min-h-52 flex-3 flex-col overflow-hidden">
         <FolderList
           folders={folders}
           onFilterSelected={() => {
@@ -170,7 +164,8 @@ export function SidebarDrawer({
         />
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col border-t border-line/70 pt-3">
+      {/* Fixed Notes Container (Inner note cards scroll) */}
+      <div className="flex min-h-48 flex-3 flex-col overflow-hidden border-t border-line/70 pt-3">
         <div className="mb-2 flex shrink-0 items-center justify-between px-1">
           <h2 className="text-xs font-black tracking-wide text-muted uppercase">
             {activeHeading}
@@ -260,7 +255,7 @@ export function SidebarDrawer({
         role="dialog"
         aria-modal="true"
         aria-label="Notes and folders navigation"
-        className="relative z-10 flex h-full w-80 max-w-[88vw] flex-col border-r-[1.5px] border-ink bg-toolbar shadow-paper"
+        className="relative z-10 flex h-full w-80 max-w-[88vw] flex-col overflow-hidden border-r-[1.5px] border-ink bg-toolbar shadow-paper"
       >
         {sidebarBody}
       </div>
