@@ -9,7 +9,7 @@ import TaskList from '@tiptap/extension-task-list';
 import Underline from '@tiptap/extension-underline';
 import { TextSelection } from '@tiptap/pm/state';
 import type { EditorView } from '@tiptap/pm/view';
-import type { EditorOptions, Extensions } from '@tiptap/react';
+import { Extension, type EditorOptions, type Extensions } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Markdown } from 'tiptap-markdown';
 import type { TiptapDoc } from '@/lib/database.types';
@@ -39,11 +39,151 @@ export function normalizeTiptapDoc(raw: unknown): TiptapDoc {
 }
 
 /**
+ * Finds the start position of every visual line touched by [from, to],
+ * covering separate paragraphs/headings/list items AND Shift+Enter hardBreaks.
+ */
+function getSelectedLineStarts(view: EditorView, from: number, to: number): number[] {
+  const { doc } = view.state;
+  const lineStarts = new Set<number>();
+
+  doc.nodesBetween(from, to, (node, pos) => {
+    if (!node.isTextblock) {
+      return true;
+    }
+
+    const blockStart = pos + 1;
+    const blockEnd = pos + node.nodeSize - 1;
+
+    const blockLineStarts: number[] = [blockStart];
+    node.forEach((child, offset) => {
+      if (child.type.name === 'hardBreak') {
+        blockLineStarts.push(blockStart + offset + child.nodeSize);
+      }
+    });
+
+    for (let i = 0; i < blockLineStarts.length; i += 1) {
+      const lineStart = blockLineStarts[i];
+      const lineEnd = i + 1 < blockLineStarts.length ? blockLineStarts[i + 1] - 1 : blockEnd;
+      if (lineEnd >= from && lineStart <= to) {
+        lineStarts.add(lineStart);
+      }
+    }
+
+    return false;
+  });
+
+  return Array.from(lineStarts).sort((a, b) => a - b);
+}
+
+/**
+ * Indents or outdents the current cursor or every block/line in a highlighted selection together.
+ */
+export function applyTabIndentation(view: EditorView, shiftKey: boolean): boolean {
+  const { state } = view;
+  const { selection } = state;
+  const { $from, empty, from, to } = selection;
+
+  // Keep native Tab cell navigation inside tables
+  for (let depth = $from.depth; depth > 0; depth -= 1) {
+    const nodeName = $from.node(depth).type.name;
+    if (nodeName === 'tableCell' || nodeName === 'tableHeader') {
+      return false;
+    }
+  }
+
+  // Collapsed cursor: let Tiptap nest/unnest list items, or insert/remove 4 spaces in paragraphs
+  if (empty) {
+    for (let depth = $from.depth; depth > 0; depth -= 1) {
+      const nodeName = $from.node(depth).type.name;
+      if (nodeName === 'listItem' || nodeName === 'taskItem') {
+        return false;
+      }
+    }
+
+    if (!shiftKey) {
+      view.dispatch(state.tr.insertText(INDENT_STR));
+      return true;
+    }
+
+    const blockStart = $from.start();
+    const leadingText = state.doc.textBetween(
+      blockStart,
+      Math.min(blockStart + INDENT_STR.length, $from.end())
+    );
+    const spacesToRemove = leadingText.match(/^ {1,4}/)?.[0].length ?? 0;
+    if (spacesToRemove > 0) {
+      view.dispatch(state.tr.delete(blockStart, blockStart + spacesToRemove));
+    }
+    return true;
+  }
+
+  // Non-empty highlighted selection: indent/outdent EVERY touched line/block together
+  const lineStarts = getSelectedLineStarts(view, from, to);
+  if (lineStarts.length === 0) {
+    return false;
+  }
+
+  const tr = state.tr;
+  let firstLineShift = 0;
+
+  // Apply in reverse document order so earlier document offsets do not shift
+  for (let i = lineStarts.length - 1; i >= 0; i -= 1) {
+    const lineStart = lineStarts[i];
+    if (!shiftKey) {
+      tr.insertText(INDENT_STR, lineStart);
+      if (i === 0) firstLineShift = INDENT_STR.length;
+    } else {
+      const maxCheckEnd = Math.min(lineStart + INDENT_STR.length, tr.doc.content.size);
+      const leadingText = tr.doc.textBetween(lineStart, maxCheckEnd);
+      const spacesToRemove = leadingText.match(/^ {1,4}/)?.[0].length ?? 0;
+      if (spacesToRemove > 0) {
+        tr.delete(lineStart, lineStart + spacesToRemove);
+        if (i === 0) firstLineShift = -spacesToRemove;
+      }
+    }
+  }
+
+  if (tr.docChanged) {
+    const firstLineStart = lineStarts[0];
+    const mappedFrom =
+      from <= firstLineStart ? firstLineStart + firstLineShift : tr.mapping.map(from, 1);
+    const mappedTo = tr.mapping.map(to, 1);
+
+    tr.setSelection(
+      TextSelection.create(
+        tr.doc,
+        Math.max(0, Math.min(mappedFrom, tr.doc.content.size)),
+        Math.max(0, Math.min(mappedTo, tr.doc.content.size))
+      )
+    );
+    view.dispatch(tr);
+  }
+
+  return true;
+}
+
+/**
+ * High-priority Tiptap keyboard extension so Tab / Shift+Tab indents all highlighted blocks
+ * before any default extension keymap or browser focus jump can intercept it.
+ */
+const BlockTabIndent = Extension.create({
+  name: 'blockTabIndent',
+  priority: 1000,
+  addKeyboardShortcuts() {
+    return {
+      Tab: () => applyTabIndentation(this.editor.view, false),
+      'Shift-Tab': () => applyTabIndentation(this.editor.view, true),
+    };
+  },
+});
+
+/**
  * Creates KakuText's strictly whitelisted Tiptap extension array.
  * Excludes images, blockquotes, code blocks, inline code, and strikethrough per schema whitelist.
  */
 export function createKakuExtensions(placeholder = 'Write something cozy...'): Extensions {
   return [
+    BlockTabIndent,
     StarterKit.configure({
       heading: { levels: [1, 2, 3] },
       bulletList: { keepMarks: true, keepAttributes: false },
@@ -123,131 +263,6 @@ export function filterPastedHtml(dirtyHtml: string): string {
     el.remove();
   });
   return doc.body.innerHTML;
-}
-
-/**
- * Finds every visual line start inside [from, to], including both separate textblocks
- * (paragraphs, headings, list items) AND soft line breaks (hardBreak / <br>) inside a block.
- */
-function getSelectedLineStarts(view: EditorView, from: number, to: number): number[] {
-  const { doc } = view.state;
-  const lineStarts = new Set<number>();
-
-  doc.nodesBetween(from, to, (node, pos) => {
-    if (!node.isTextblock) {
-      return true;
-    }
-
-    const blockStart = pos + 1;
-    const blockEnd = pos + node.nodeSize - 1;
-
-    // Collect every visual line inside this textblock (start of block + right after each hardBreak)
-    const blockLineStarts: number[] = [blockStart];
-    node.forEach((child, offset) => {
-      if (child.type.name === 'hardBreak') {
-        blockLineStarts.push(blockStart + offset + child.nodeSize);
-      }
-    });
-
-    // Include every visual line within this block that overlaps [from, to]
-    for (let i = 0; i < blockLineStarts.length; i += 1) {
-      const lineStart = blockLineStarts[i];
-      const lineEnd = i + 1 < blockLineStarts.length ? blockLineStarts[i + 1] - 1 : blockEnd;
-      if (lineEnd >= from && lineStart <= to) {
-        lineStarts.add(lineStart);
-      }
-    }
-
-    return false;
-  });
-
-  return Array.from(lineStarts).sort((a, b) => a - b);
-}
-
-/**
- * Indents or outdents the current cursor or every line in a highlighted text selection.
- */
-export function applyTabIndentation(view: EditorView, shiftKey: boolean): boolean {
-  const { state } = view;
-  const { selection } = state;
-  const { $from, empty, from, to } = selection;
-
-  // Keep native Tab cell navigation inside tables
-  for (let depth = $from.depth; depth > 0; depth -= 1) {
-    const nodeName = $from.node(depth).type.name;
-    if (nodeName === 'tableCell' || nodeName === 'tableHeader') {
-      return false;
-    }
-  }
-
-  // Collapsed cursor inside a list/checklist: let Tiptap nest/unnest the list item
-  if (empty) {
-    for (let depth = $from.depth; depth > 0; depth -= 1) {
-      const nodeName = $from.node(depth).type.name;
-      if (nodeName === 'listItem' || nodeName === 'taskItem') {
-        return false;
-      }
-    }
-
-    if (!shiftKey) {
-      view.dispatch(state.tr.insertText(INDENT_STR));
-      return true;
-    }
-
-    const blockStart = $from.start();
-    const leadingText = state.doc.textBetween(
-      blockStart,
-      Math.min(blockStart + INDENT_STR.length, $from.end())
-    );
-    const spacesToRemove = leadingText.match(/^ {1,4}/)?.[0].length ?? 0;
-    if (spacesToRemove > 0) {
-      view.dispatch(state.tr.delete(blockStart, blockStart + spacesToRemove));
-    }
-    return true;
-  }
-
-  const lineStarts = getSelectedLineStarts(view, from, to);
-  if (lineStarts.length === 0) {
-    return false;
-  }
-
-  const tr = state.tr;
-  let firstLineShift = 0;
-
-  // Apply in reverse document order so earlier document positions stay valid
-  for (let i = lineStarts.length - 1; i >= 0; i -= 1) {
-    const lineStart = lineStarts[i];
-    if (!shiftKey) {
-      tr.insertText(INDENT_STR, lineStart);
-      if (i === 0) firstLineShift = INDENT_STR.length;
-    } else {
-      const maxCheckEnd = Math.min(lineStart + INDENT_STR.length, tr.doc.content.size);
-      const leadingText = tr.doc.textBetween(lineStart, maxCheckEnd);
-      const spacesToRemove = leadingText.match(/^ {1,4}/)?.[0].length ?? 0;
-      if (spacesToRemove > 0) {
-        tr.delete(lineStart, lineStart + spacesToRemove);
-        if (i === 0) firstLineShift = -spacesToRemove;
-      }
-    }
-  }
-
-  if (tr.docChanged) {
-    const firstLineStart = lineStarts[0];
-    const mappedFrom =
-      from <= firstLineStart ? firstLineStart + firstLineShift : tr.mapping.map(from, 1);
-    const mappedTo = tr.mapping.map(to, 1);
-
-    tr.setSelection(
-      TextSelection.create(
-        tr.doc,
-        Math.max(0, Math.min(mappedFrom, tr.doc.content.size)),
-        Math.max(0, Math.min(mappedTo, tr.doc.content.size))
-      )
-    );
-    view.dispatch(tr);
-  }
-
-  return true;
 }
 
 export const kakuEditorProps: NonNullable<EditorOptions['editorProps']> = {
