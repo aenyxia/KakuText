@@ -126,12 +126,51 @@ export function filterPastedHtml(dirtyHtml: string): string {
 }
 
 /**
- * Indents or outdents the current cursor or highlighted text selection in ProseMirror.
+ * Finds every visual line start inside [from, to], including both separate textblocks
+ * (paragraphs, headings, list items) AND soft line breaks (hardBreak / <br>) inside a block.
+ */
+function getSelectedLineStarts(view: EditorView, from: number, to: number): number[] {
+  const { doc } = view.state;
+  const lineStarts = new Set<number>();
+
+  doc.nodesBetween(from, to, (node, pos) => {
+    if (!node.isTextblock) {
+      return true;
+    }
+
+    const blockStart = pos + 1;
+    const blockEnd = pos + node.nodeSize - 1;
+
+    // Collect every visual line inside this textblock (start of block + right after each hardBreak)
+    const blockLineStarts: number[] = [blockStart];
+    node.forEach((child, offset) => {
+      if (child.type.name === 'hardBreak') {
+        blockLineStarts.push(blockStart + offset + child.nodeSize);
+      }
+    });
+
+    // Include every visual line within this block that overlaps [from, to]
+    for (let i = 0; i < blockLineStarts.length; i += 1) {
+      const lineStart = blockLineStarts[i];
+      const lineEnd = i + 1 < blockLineStarts.length ? blockLineStarts[i + 1] - 1 : blockEnd;
+      if (lineEnd >= from && lineStart <= to) {
+        lineStarts.add(lineStart);
+      }
+    }
+
+    return false;
+  });
+
+  return Array.from(lineStarts).sort((a, b) => a - b);
+}
+
+/**
+ * Indents or outdents the current cursor or every line in a highlighted text selection.
  */
 export function applyTabIndentation(view: EditorView, shiftKey: boolean): boolean {
   const { state } = view;
   const { selection } = state;
-  const { $from, $to, empty, from, to } = selection;
+  const { $from, empty, from, to } = selection;
 
   // Keep native Tab cell navigation inside tables
   for (let depth = $from.depth; depth > 0; depth -= 1) {
@@ -167,69 +206,35 @@ export function applyTabIndentation(view: EditorView, shiftKey: boolean): boolea
     return true;
   }
 
-  // Collect every textblock touched by the mouse/keyboard highlight
-  const blocks: { start: number; text: string }[] = [];
-  state.doc.nodesBetween(from, to, (node, pos) => {
-    if (node.isTextblock) {
-      blocks.push({ start: pos + 1, text: node.textContent });
-      return false;
-    }
-    return true;
-  });
-
-  if (blocks.length === 0) {
+  const lineStarts = getSelectedLineStarts(view, from, to);
+  if (lineStarts.length === 0) {
     return false;
   }
 
   const tr = state.tr;
+  let firstLineShift = 0;
 
-  // Single-line mid-sentence highlight (starts after the beginning of the line, not full line):
-  // indent right before the highlighted text so the selected phrase shifts visibly
-  const isSingleBlock = blocks.length === 1 && $from.sameParent($to);
-  const startsMidLine = isSingleBlock && from > blocks[0].start && to < $from.end();
-
-  if (startsMidLine) {
+  // Apply in reverse document order so earlier document positions stay valid
+  for (let i = lineStarts.length - 1; i >= 0; i -= 1) {
+    const lineStart = lineStarts[i];
     if (!shiftKey) {
-      tr.insertText(INDENT_STR, from);
-      tr.setSelection(
-        TextSelection.create(tr.doc, from + INDENT_STR.length, to + INDENT_STR.length)
-      );
-      view.dispatch(tr);
+      tr.insertText(INDENT_STR, lineStart);
+      if (i === 0) firstLineShift = INDENT_STR.length;
     } else {
-      const beforeStart = Math.max(blocks[0].start, from - INDENT_STR.length);
-      const beforeText = state.doc.textBetween(beforeStart, from);
-      const spacesToRemove = beforeText.match(/ {1,4}$/)?.[0].length ?? 0;
+      const maxCheckEnd = Math.min(lineStart + INDENT_STR.length, tr.doc.content.size);
+      const leadingText = tr.doc.textBetween(lineStart, maxCheckEnd);
+      const spacesToRemove = leadingText.match(/^ {1,4}/)?.[0].length ?? 0;
       if (spacesToRemove > 0) {
-        tr.delete(from - spacesToRemove, from);
-        tr.setSelection(TextSelection.create(tr.doc, from - spacesToRemove, to - spacesToRemove));
-        view.dispatch(tr);
-      }
-    }
-    return true;
-  }
-
-  // Multi-line highlight or full-line highlight: indent/outdent the start of every selected block
-  let firstBlockShift = 0;
-  for (let i = blocks.length - 1; i >= 0; i -= 1) {
-    const block = blocks[i];
-    if (!shiftKey) {
-      tr.insertText(INDENT_STR, block.start);
-      if (i === 0) firstBlockShift = INDENT_STR.length;
-    } else {
-      const spacesToRemove = block.text.match(/^ {1,4}/)?.[0].length ?? 0;
-      if (spacesToRemove > 0) {
-        tr.delete(block.start, block.start + spacesToRemove);
-        if (i === 0) firstBlockShift = -spacesToRemove;
+        tr.delete(lineStart, lineStart + spacesToRemove);
+        if (i === 0) firstLineShift = -spacesToRemove;
       }
     }
   }
 
   if (tr.docChanged) {
-    const firstBlockStart = blocks[0].start;
+    const firstLineStart = lineStarts[0];
     const mappedFrom =
-      from <= firstBlockStart
-        ? firstBlockStart + firstBlockShift
-        : tr.mapping.map(from, 1);
+      from <= firstLineStart ? firstLineStart + firstLineShift : tr.mapping.map(from, 1);
     const mappedTo = tr.mapping.map(to, 1);
 
     tr.setSelection(
