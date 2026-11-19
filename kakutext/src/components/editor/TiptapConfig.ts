@@ -7,12 +7,15 @@ import TableRow from '@tiptap/extension-table-row';
 import TaskItem from '@tiptap/extension-task-item';
 import TaskList from '@tiptap/extension-task-list';
 import Underline from '@tiptap/extension-underline';
+import { TextSelection } from '@tiptap/pm/state';
 import type { EditorOptions, Extensions } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Markdown } from 'tiptap-markdown';
 import type { TiptapDoc } from '@/lib/database.types';
 import { sanitizeRichHtml, sanitizeTiptapDoc } from '@/lib/sanitize';
 import { isSafeUrl } from '@/lib/validation';
+
+const INDENT_STR = '    ';
 
 export const EMPTY_TIPTAP_DOC: TiptapDoc = {
   type: 'doc',
@@ -130,11 +133,15 @@ export const kakuEditorProps: NonNullable<EditorOptions['editorProps']> = {
     spellcheck: 'true',
   },
   handleKeyDown(view, event) {
-    if (event.key !== 'Tab' || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) {
+    if (event.key !== 'Tab' || event.ctrlKey || event.metaKey || event.altKey) {
       return false;
     }
 
-    const { $from } = view.state.selection;
+    const { state } = view;
+    const { selection } = state;
+    const { $from, $to, empty, from, to } = selection;
+
+    // Let Tiptap handle list indentation/outdentation and table cell navigation
     for (let depth = $from.depth; depth > 0; depth -= 1) {
       const nodeName = $from.node(depth).type.name;
       if (
@@ -143,12 +150,70 @@ export const kakuEditorProps: NonNullable<EditorOptions['editorProps']> = {
         nodeName === 'tableCell' ||
         nodeName === 'tableHeader'
       ) {
-        return false; // Let Tiptap handle list indentation and table cell navigation
+        return false;
       }
     }
 
     event.preventDefault();
-    view.dispatch(view.state.tr.insertText('    '));
+
+    // Single cursor with no selection: insert 4 spaces (Tab) or strip up to 4 leading spaces (Shift+Tab)
+    if (empty) {
+      if (!event.shiftKey) {
+        view.dispatch(state.tr.insertText(INDENT_STR));
+        return true;
+      }
+
+      const blockStart = $from.start();
+      const leadingText = state.doc.textBetween(blockStart, Math.min(blockStart + INDENT_STR.length, $from.end()));
+      const spacesToRemove = leadingText.match(/^ {1,4}/)?.[0].length ?? 0;
+      if (spacesToRemove > 0) {
+        view.dispatch(state.tr.delete(blockStart, blockStart + spacesToRemove));
+      }
+      return true;
+    }
+
+    // Multi-line / range selection: indent or outdent every selected paragraph/heading while preserving selection
+    const blockStarts: { start: number; text: string }[] = [];
+    state.doc.nodesBetween(from, to, (node, pos) => {
+      if (node.isTextblock && (node.type.name === 'paragraph' || node.type.name === 'heading')) {
+        blockStarts.push({ start: pos + 1, text: node.textContent });
+        return false;
+      }
+      return true;
+    });
+
+    if (blockStarts.length === 0) {
+      if (!event.shiftKey) {
+        view.dispatch(state.tr.insertText(INDENT_STR));
+      }
+      return true;
+    }
+
+    const tr = state.tr;
+    let firstBlockShift = 0;
+
+    // Apply in reverse document order so earlier positions stay valid
+    for (let i = blockStarts.length - 1; i >= 0; i -= 1) {
+      const block = blockStarts[i];
+      if (!event.shiftKey) {
+        tr.insertText(INDENT_STR, block.start);
+        if (i === 0) firstBlockShift = INDENT_STR.length;
+      } else {
+        const spacesToRemove = block.text.match(/^ {1,4}/)?.[0].length ?? 0;
+        if (spacesToRemove > 0) {
+          tr.delete(block.start, block.start + spacesToRemove);
+          if (i === 0) firstBlockShift = -spacesToRemove;
+        }
+      }
+    }
+
+    if (tr.docChanged) {
+      const mappedFrom = Math.max(blockStarts[0].start, tr.mapping.map(from, -1) + (from === blockStarts[0].start ? firstBlockShift : 0));
+      const mappedTo = tr.mapping.map(to, 1);
+      tr.setSelection(TextSelection.create(tr.doc, mappedFrom, mappedTo));
+      view.dispatch(tr);
+    }
+
     return true;
   },
   transformPastedHTML(html) {
