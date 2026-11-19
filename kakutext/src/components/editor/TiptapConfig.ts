@@ -139,32 +139,37 @@ export const kakuEditorProps: NonNullable<EditorOptions['editorProps']> = {
 
     const { state } = view;
     const { selection } = state;
-    const { $from, $to, empty, from, to } = selection;
+    const { $from, empty, from, to } = selection;
 
-    // Let Tiptap handle list indentation/outdentation and table cell navigation
+    // Keep native Tab cell navigation inside tables
     for (let depth = $from.depth; depth > 0; depth -= 1) {
       const nodeName = $from.node(depth).type.name;
-      if (
-        nodeName === 'listItem' ||
-        nodeName === 'taskItem' ||
-        nodeName === 'tableCell' ||
-        nodeName === 'tableHeader'
-      ) {
+      if (nodeName === 'tableCell' || nodeName === 'tableHeader') {
         return false;
       }
     }
 
-    event.preventDefault();
-
-    // Single cursor with no selection: insert 4 spaces (Tab) or strip up to 4 leading spaces (Shift+Tab)
+    // When cursor has no selection inside a list/checklist, let Tiptap nest/unnest the list item
     if (empty) {
+      for (let depth = $from.depth; depth > 0; depth -= 1) {
+        const nodeName = $from.node(depth).type.name;
+        if (nodeName === 'listItem' || nodeName === 'taskItem') {
+          return false;
+        }
+      }
+
+      event.preventDefault();
+
       if (!event.shiftKey) {
         view.dispatch(state.tr.insertText(INDENT_STR));
         return true;
       }
 
       const blockStart = $from.start();
-      const leadingText = state.doc.textBetween(blockStart, Math.min(blockStart + INDENT_STR.length, $from.end()));
+      const leadingText = state.doc.textBetween(
+        blockStart,
+        Math.min(blockStart + INDENT_STR.length, $from.end())
+      );
       const spacesToRemove = leadingText.match(/^ {1,4}/)?.[0].length ?? 0;
       if (spacesToRemove > 0) {
         view.dispatch(state.tr.delete(blockStart, blockStart + spacesToRemove));
@@ -172,29 +177,28 @@ export const kakuEditorProps: NonNullable<EditorOptions['editorProps']> = {
       return true;
     }
 
-    // Multi-line / range selection: indent or outdent every selected paragraph/heading while preserving selection
-    const blockStarts: { start: number; text: string }[] = [];
+    // Highlighted selection: collect EVERY textblock (paragraphs, headings, list items, blank lines)
+    const blocks: { start: number; text: string }[] = [];
     state.doc.nodesBetween(from, to, (node, pos) => {
-      if (node.isTextblock && (node.type.name === 'paragraph' || node.type.name === 'heading')) {
-        blockStarts.push({ start: pos + 1, text: node.textContent });
+      if (node.isTextblock) {
+        blocks.push({ start: pos + 1, text: node.textContent });
         return false;
       }
       return true;
     });
 
-    if (blockStarts.length === 0) {
-      if (!event.shiftKey) {
-        view.dispatch(state.tr.insertText(INDENT_STR));
-      }
-      return true;
+    if (blocks.length === 0) {
+      return false;
     }
+
+    event.preventDefault();
 
     const tr = state.tr;
     let firstBlockShift = 0;
 
-    // Apply in reverse document order so earlier positions stay valid
-    for (let i = blockStarts.length - 1; i >= 0; i -= 1) {
-      const block = blockStarts[i];
+    // Apply in reverse document order so earlier positions stay accurate
+    for (let i = blocks.length - 1; i >= 0; i -= 1) {
+      const block = blocks[i];
       if (!event.shiftKey) {
         tr.insertText(INDENT_STR, block.start);
         if (i === 0) firstBlockShift = INDENT_STR.length;
@@ -208,9 +212,20 @@ export const kakuEditorProps: NonNullable<EditorOptions['editorProps']> = {
     }
 
     if (tr.docChanged) {
-      const mappedFrom = Math.max(blockStarts[0].start, tr.mapping.map(from, -1) + (from === blockStarts[0].start ? firstBlockShift : 0));
+      const firstBlockStart = blocks[0].start;
+      const mappedFrom =
+        from <= firstBlockStart
+          ? firstBlockStart + firstBlockShift
+          : tr.mapping.map(from, 1);
       const mappedTo = tr.mapping.map(to, 1);
-      tr.setSelection(TextSelection.create(tr.doc, mappedFrom, mappedTo));
+
+      tr.setSelection(
+        TextSelection.create(
+          tr.doc,
+          Math.max(0, Math.min(mappedFrom, tr.doc.content.size)),
+          Math.max(0, Math.min(mappedTo, tr.doc.content.size))
+        )
+      );
       view.dispatch(tr);
     }
 
