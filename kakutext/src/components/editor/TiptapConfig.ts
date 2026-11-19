@@ -129,6 +129,28 @@ export const kakuEditorProps: NonNullable<EditorOptions['editorProps']> = {
     'aria-label': 'Note body editor',
     spellcheck: 'true',
   },
+  handleKeyDown(view, event) {
+    if (event.key !== 'Tab' || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) {
+      return false;
+    }
+
+    const { $from } = view.state.selection;
+    for (let depth = $from.depth; depth > 0; depth -= 1) {
+      const nodeName = $from.node(depth).type.name;
+      if (
+        nodeName === 'listItem' ||
+        nodeName === 'taskItem' ||
+        nodeName === 'tableCell' ||
+        nodeName === 'tableHeader'
+      ) {
+        return false; // Let Tiptap handle list indentation and table cell navigation
+      }
+    }
+
+    event.preventDefault();
+    view.dispatch(view.state.tr.insertText('    '));
+    return true;
+  },
   transformPastedHTML(html) {
     return filterPastedHtml(html);
   },
