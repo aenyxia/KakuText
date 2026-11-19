@@ -8,6 +8,7 @@ import TaskItem from '@tiptap/extension-task-item';
 import TaskList from '@tiptap/extension-task-list';
 import Underline from '@tiptap/extension-underline';
 import { TextSelection } from '@tiptap/pm/state';
+import type { EditorView } from '@tiptap/pm/view';
 import type { EditorOptions, Extensions } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Markdown } from 'tiptap-markdown';
@@ -124,6 +125,126 @@ export function filterPastedHtml(dirtyHtml: string): string {
   return doc.body.innerHTML;
 }
 
+/**
+ * Indents or outdents the current cursor or highlighted text selection in ProseMirror.
+ */
+export function applyTabIndentation(view: EditorView, shiftKey: boolean): boolean {
+  const { state } = view;
+  const { selection } = state;
+  const { $from, $to, empty, from, to } = selection;
+
+  // Keep native Tab cell navigation inside tables
+  for (let depth = $from.depth; depth > 0; depth -= 1) {
+    const nodeName = $from.node(depth).type.name;
+    if (nodeName === 'tableCell' || nodeName === 'tableHeader') {
+      return false;
+    }
+  }
+
+  // Collapsed cursor inside a list/checklist: let Tiptap nest/unnest the list item
+  if (empty) {
+    for (let depth = $from.depth; depth > 0; depth -= 1) {
+      const nodeName = $from.node(depth).type.name;
+      if (nodeName === 'listItem' || nodeName === 'taskItem') {
+        return false;
+      }
+    }
+
+    if (!shiftKey) {
+      view.dispatch(state.tr.insertText(INDENT_STR));
+      return true;
+    }
+
+    const blockStart = $from.start();
+    const leadingText = state.doc.textBetween(
+      blockStart,
+      Math.min(blockStart + INDENT_STR.length, $from.end())
+    );
+    const spacesToRemove = leadingText.match(/^ {1,4}/)?.[0].length ?? 0;
+    if (spacesToRemove > 0) {
+      view.dispatch(state.tr.delete(blockStart, blockStart + spacesToRemove));
+    }
+    return true;
+  }
+
+  // Collect every textblock touched by the mouse/keyboard highlight
+  const blocks: { start: number; text: string }[] = [];
+  state.doc.nodesBetween(from, to, (node, pos) => {
+    if (node.isTextblock) {
+      blocks.push({ start: pos + 1, text: node.textContent });
+      return false;
+    }
+    return true;
+  });
+
+  if (blocks.length === 0) {
+    return false;
+  }
+
+  const tr = state.tr;
+
+  // Single-line mid-sentence highlight (starts after the beginning of the line, not full line):
+  // indent right before the highlighted text so the selected phrase shifts visibly
+  const isSingleBlock = blocks.length === 1 && $from.sameParent($to);
+  const startsMidLine = isSingleBlock && from > blocks[0].start && to < $from.end();
+
+  if (startsMidLine) {
+    if (!shiftKey) {
+      tr.insertText(INDENT_STR, from);
+      tr.setSelection(
+        TextSelection.create(tr.doc, from + INDENT_STR.length, to + INDENT_STR.length)
+      );
+      view.dispatch(tr);
+    } else {
+      const beforeStart = Math.max(blocks[0].start, from - INDENT_STR.length);
+      const beforeText = state.doc.textBetween(beforeStart, from);
+      const spacesToRemove = beforeText.match(/ {1,4}$/)?.[0].length ?? 0;
+      if (spacesToRemove > 0) {
+        tr.delete(from - spacesToRemove, from);
+        tr.setSelection(TextSelection.create(tr.doc, from - spacesToRemove, to - spacesToRemove));
+        view.dispatch(tr);
+      }
+    }
+    return true;
+  }
+
+  // Multi-line highlight or full-line highlight: indent/outdent the start of every selected block
+  let firstBlockShift = 0;
+  for (let i = blocks.length - 1; i >= 0; i -= 1) {
+    const block = blocks[i];
+    if (!shiftKey) {
+      tr.insertText(INDENT_STR, block.start);
+      if (i === 0) firstBlockShift = INDENT_STR.length;
+    } else {
+      const spacesToRemove = block.text.match(/^ {1,4}/)?.[0].length ?? 0;
+      if (spacesToRemove > 0) {
+        tr.delete(block.start, block.start + spacesToRemove);
+        if (i === 0) firstBlockShift = -spacesToRemove;
+      }
+    }
+  }
+
+  if (tr.docChanged) {
+    const firstBlockStart = blocks[0].start;
+    const mappedFrom =
+      from <= firstBlockStart
+        ? firstBlockStart + firstBlockShift
+        : tr.mapping.map(from, 1);
+    const mappedTo = tr.mapping.map(to, 1);
+
+    tr.setSelection(
+      TextSelection.create(
+        tr.doc,
+        Math.max(0, Math.min(mappedFrom, tr.doc.content.size)),
+        Math.max(0, Math.min(mappedTo, tr.doc.content.size))
+      )
+    );
+    view.dispatch(tr);
+  }
+
+  return true;
+}
+
 export const kakuEditorProps: NonNullable<EditorOptions['editorProps']> = {
   attributes: {
     class: 'kaku-prose focus:outline-none min-h-[24rem]',
@@ -137,99 +258,11 @@ export const kakuEditorProps: NonNullable<EditorOptions['editorProps']> = {
       return false;
     }
 
-    const { state } = view;
-    const { selection } = state;
-    const { $from, empty, from, to } = selection;
-
-    // Keep native Tab cell navigation inside tables
-    for (let depth = $from.depth; depth > 0; depth -= 1) {
-      const nodeName = $from.node(depth).type.name;
-      if (nodeName === 'tableCell' || nodeName === 'tableHeader') {
-        return false;
-      }
-    }
-
-    // When cursor has no selection inside a list/checklist, let Tiptap nest/unnest the list item
-    if (empty) {
-      for (let depth = $from.depth; depth > 0; depth -= 1) {
-        const nodeName = $from.node(depth).type.name;
-        if (nodeName === 'listItem' || nodeName === 'taskItem') {
-          return false;
-        }
-      }
-
+    const handled = applyTabIndentation(view, event.shiftKey);
+    if (handled) {
       event.preventDefault();
-
-      if (!event.shiftKey) {
-        view.dispatch(state.tr.insertText(INDENT_STR));
-        return true;
-      }
-
-      const blockStart = $from.start();
-      const leadingText = state.doc.textBetween(
-        blockStart,
-        Math.min(blockStart + INDENT_STR.length, $from.end())
-      );
-      const spacesToRemove = leadingText.match(/^ {1,4}/)?.[0].length ?? 0;
-      if (spacesToRemove > 0) {
-        view.dispatch(state.tr.delete(blockStart, blockStart + spacesToRemove));
-      }
-      return true;
     }
-
-    // Highlighted selection: collect EVERY textblock (paragraphs, headings, list items, blank lines)
-    const blocks: { start: number; text: string }[] = [];
-    state.doc.nodesBetween(from, to, (node, pos) => {
-      if (node.isTextblock) {
-        blocks.push({ start: pos + 1, text: node.textContent });
-        return false;
-      }
-      return true;
-    });
-
-    if (blocks.length === 0) {
-      return false;
-    }
-
-    event.preventDefault();
-
-    const tr = state.tr;
-    let firstBlockShift = 0;
-
-    // Apply in reverse document order so earlier positions stay accurate
-    for (let i = blocks.length - 1; i >= 0; i -= 1) {
-      const block = blocks[i];
-      if (!event.shiftKey) {
-        tr.insertText(INDENT_STR, block.start);
-        if (i === 0) firstBlockShift = INDENT_STR.length;
-      } else {
-        const spacesToRemove = block.text.match(/^ {1,4}/)?.[0].length ?? 0;
-        if (spacesToRemove > 0) {
-          tr.delete(block.start, block.start + spacesToRemove);
-          if (i === 0) firstBlockShift = -spacesToRemove;
-        }
-      }
-    }
-
-    if (tr.docChanged) {
-      const firstBlockStart = blocks[0].start;
-      const mappedFrom =
-        from <= firstBlockStart
-          ? firstBlockStart + firstBlockShift
-          : tr.mapping.map(from, 1);
-      const mappedTo = tr.mapping.map(to, 1);
-
-      tr.setSelection(
-        TextSelection.create(
-          tr.doc,
-          Math.max(0, Math.min(mappedFrom, tr.doc.content.size)),
-          Math.max(0, Math.min(mappedTo, tr.doc.content.size))
-        )
-      );
-      view.dispatch(tr);
-    }
-
-    return true;
+    return handled;
   },
   transformPastedHTML(html) {
     return filterPastedHtml(html);
